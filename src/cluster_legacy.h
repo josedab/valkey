@@ -386,9 +386,27 @@ struct _clusterNode {
 
 /* Struct used for storing slot statistics. */
 typedef struct slotStat {
+    /* Existing metrics */
     uint64_t cpu_usec;
     uint64_t network_bytes_in;
     uint64_t network_bytes_out;
+
+    /* Enhanced observability metrics */
+    uint64_t key_count;                 /* Cached key count for slot */
+    uint64_t memory_usage_bytes;        /* Memory used by keys in this slot */
+    uint64_t ops_per_sec;               /* Operations per second for this slot */
+    uint64_t read_ops;                  /* Read operation count */
+    uint64_t write_ops;                 /* Write operation count */
+
+    /* Latency tracking */
+    uint64_t total_command_duration_us; /* Total command execution time in microseconds */
+    uint64_t command_count;             /* Total number of commands executed */
+    uint64_t p50_latency_us;            /* P50 latency in microseconds */
+    uint64_t p95_latency_us;            /* P95 latency in microseconds */
+    uint64_t p99_latency_us;            /* P99 latency in microseconds */
+
+    /* Latency histogram for percentile calculation (logarithmic buckets) */
+    uint64_t latency_histogram[64];
 } slotStat;
 
 typedef struct slotRange {

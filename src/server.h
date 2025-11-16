@@ -1337,6 +1337,7 @@ typedef struct client {
     int nread;                                    /* Number of bytes of the last read. */
     int read_flags;                               /* Client Read flags - used to communicate the client read state. */
     int slot;                                     /* The slot the client is executing against. Set to -1 if no slot is being used */
+    void *trace_span;                             /* OpenTelemetry trace span for observability */
     listNode *mem_usage_bucket_node;
     clientMemUsageBucket *mem_usage_bucket;
     /* In updateClientMemoryUsage() we track the memory usage of
@@ -2217,6 +2218,12 @@ struct valkeyServer {
     sds hash_seed;                                         /* Configurable DB hash seed */
     int cluster_slot_stats_enabled;                        /* Cluster slot usage statistics tracking enabled. */
     mstime_t cluster_mf_timeout;                           /* Milliseconds to do a manual failover. */
+    /* Observability / Metrics / Tracing */
+    int trace_enabled;                                     /* Enable OpenTelemetry tracing */
+    int trace_sampling_rate;                               /* Trace sampling rate (1-100%) */
+    char *trace_exporter_endpoint;                         /* OTLP exporter endpoint */
+    char *trace_service_name;                              /* Service name for traces */
+    int metrics_exporter_enabled;                          /* Enable Prometheus metrics export */
     unsigned long cluster_slot_migration_log_max_len;      /* Maximum count of migrations to display in the
                                                             * migration log, after which we will clear finished
                                                             * migrations. */

@@ -8,6 +8,7 @@
 #include "bio.h"
 #include "module.h"
 #include "functions.h"
+#include "otel_tracer.h"
 
 #include <sys/wait.h>
 #include <fcntl.h>

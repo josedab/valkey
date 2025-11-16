@@ -32,6 +32,7 @@
 #include "cluster_slot_stats.h"
 #include "cluster_migrateslots.h"
 #include "script.h"
+#include "otel_tracer.h"
 #include "intset.h"
 #include "sds.h"
 #include "fpconv_dtoa.h"
@@ -3713,11 +3714,22 @@ int processCommandAndResetClient(client *c) {
     int deadclient = 0;
     client *old_client = server.current_client;
     server.current_client = c;
+
+    /* Start tracing span for command execution */
+    if (server_tracer && server_tracer->enabled && c->cmd) {
+        traceCommandStart(c);
+    }
+
     if (processCommand(c) == C_OK) {
         commandProcessed(c);
         /* Update the client's memory to include output buffer growth following the
          * processed command. */
         if (c->conn) updateClientMemUsageAndBucket(c);
+    }
+
+    /* End tracing span */
+    if (server_tracer && server_tracer->enabled && c->trace_span) {
+        traceCommandEnd(c, (c->lastcmd && c->lastcmd->proc == c->cmd->proc) ? 0 : 1);
     }
 
     if (server.current_client == NULL) deadclient = 1;

@@ -3452,6 +3452,13 @@ standardConfig static_configs[] = {
     createSpecialConfig("replicaof", "slaveof", IMMUTABLE_CONFIG | MULTI_ARG_CONFIG, setConfigReplicaOfOption, getConfigReplicaOfOption, rewriteConfigReplicaOfOption, NULL),
     createSpecialConfig("latency-tracking-info-percentiles", NULL, MODIFIABLE_CONFIG | MULTI_ARG_CONFIG, setConfigLatencyTrackingInfoPercentilesOutputOption, getConfigLatencyTrackingInfoPercentilesOutputOption, rewriteConfigLatencyTrackingInfoPercentilesOutputOption, NULL),
 
+    /* Observability configs */
+    createBoolConfig("trace-enabled", NULL, MODIFIABLE_CONFIG, server.trace_enabled, 0, NULL, NULL),
+    createIntConfig("trace-sampling-rate", NULL, MODIFIABLE_CONFIG, 1, 100, server.trace_sampling_rate, 1, INTEGER_CONFIG, NULL, NULL),
+    createStringConfig("trace-exporter-endpoint", NULL, MODIFIABLE_CONFIG, EMPTY_STRING_IS_NULL, server.trace_exporter_endpoint, NULL, NULL, NULL),
+    createStringConfig("trace-service-name", NULL, MODIFIABLE_CONFIG, EMPTY_STRING_IS_NULL, server.trace_service_name, NULL, NULL, NULL),
+    createBoolConfig("metrics-exporter-enabled", NULL, MODIFIABLE_CONFIG, server.metrics_exporter_enabled, 0, NULL, NULL),
+
     /* NULL Terminator, this is dropped when we convert to the runtime array. */
     {NULL},
 };
