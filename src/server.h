@@ -614,7 +614,8 @@ typedef enum {
 
 /* Sets log format */
 typedef enum { LOG_FORMAT_LEGACY = 0,
-               LOG_FORMAT_LOGFMT } log_format_type;
+               LOG_FORMAT_LOGFMT,
+               LOG_FORMAT_JSON } log_format_type;
 
 /* Sets log timestamp format */
 typedef enum { LOG_TIMESTAMP_LEGACY = 0,
@@ -2011,6 +2012,10 @@ struct valkeyServer {
                                * abort(). useful for Valgrind. */
     int log_format;           /* Print log in specific format */
     int log_timestamp_format; /* Timestamp format in log */
+    int log_include_level;    /* Include log level in structured logs */
+    int log_include_process_id; /* Include process ID in structured logs */
+    int log_include_thread_id;  /* Include thread ID in structured logs */
+    sds logfmt_field_separator; /* Field separator for logfmt format */
     /* Shutdown */
     int shutdown_timeout;    /* Graceful shutdown time limit in seconds. */
     int shutdown_on_sigint;  /* Shutdown flags configured for SIGINT. */
