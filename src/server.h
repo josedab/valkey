@@ -1765,6 +1765,11 @@ struct valkeyServer {
     int active_io_threads_num;                /* Current number of active IO threads, includes main thread. */
     int events_per_io_thread;                 /* Number of events on the event loop to trigger IO threads activation. */
     int prefetch_batch_max_size;              /* Maximum number of keys to prefetch in a single batch */
+    int prefetch_locality_aware;              /* Enable memory locality-aware prefetch batch ordering */
+    int prefetch_pattern_learning_enabled;    /* Enable access pattern learning for predictive prefetching */
+    int prefetch_pattern_max_patterns;        /* Maximum number of patterns to track */
+    int prefetch_pattern_min_confidence;      /* Minimum confidence (0-100) to use pattern for prefetch */
+    long long prefetch_pattern_ttl_ms;        /* Time-to-live for learned patterns in milliseconds */
     long long events_processed_while_blocked; /* processEventsWhileBlocked() */
     int enable_protected_configs;             /* Enable the modification of protected configs, see PROTECTED_ACTION_ALLOWED_* */
     int enable_debug_cmd;                     /* Enable DEBUG commands, see PROTECTED_ACTION_ALLOWED_* */

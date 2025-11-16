@@ -21,6 +21,7 @@ typedef enum {
 typedef struct KeyPrefetchInfo {
     PrefetchState state; /* Current state of the prefetch operation */
     hashtableIncrementalFindState hashtab_state;
+    void *value_ptr;    /* Cached value pointer for locality sorting */
 } KeyPrefetchInfo;
 
 /* PrefetchCommandsBatch structure holds the state of the current batch of client commands being processed. */
@@ -94,6 +95,31 @@ static void markKeyAsdone(KeyPrefetchInfo *info) {
     batch->keys_done++;
 }
 
+/* Compare keys by memory address for cache-friendly ordering */
+static int compareKeysByMemoryAddress(const void *a, const void *b) {
+    const KeyPrefetchInfo *key_a = (const KeyPrefetchInfo *)a;
+    const KeyPrefetchInfo *key_b = (const KeyPrefetchInfo *)b;
+
+    /* Skip already done entries (move them to the end) */
+    if (key_a->state == PREFETCH_DONE && key_b->state != PREFETCH_DONE) return 1;
+    if (key_a->state != PREFETCH_DONE && key_b->state == PREFETCH_DONE) return -1;
+    if (key_a->state == PREFETCH_DONE && key_b->state == PREFETCH_DONE) return 0;
+
+    /* Compare by memory address */
+    uintptr_t addr_a = (uintptr_t)key_a->value_ptr;
+    uintptr_t addr_b = (uintptr_t)key_b->value_ptr;
+
+    if (addr_a < addr_b) return -1;
+    if (addr_a > addr_b) return 1;
+    return 0;
+}
+
+/* Sort prefetch batch by memory locality before issuing prefetch instructions */
+static void sortBatchByLocality(KeyPrefetchInfo *batch_info, size_t batch_size) {
+    /* Quick sort by memory address for better cache line utilization */
+    qsort(batch_info, batch_size, sizeof(KeyPrefetchInfo), compareKeysByMemoryAddress);
+}
+
 /* Returns the next KeyPrefetchInfo structure that needs to be processed. */
 static KeyPrefetchInfo *getNextPrefetchInfo(void) {
     size_t start_idx = batch->cur_idx;
@@ -128,6 +154,11 @@ static void prefetchEntry(KeyPrefetchInfo *info) {
          * starting certain number of I/O threads */
         markKeyAsdone(info);
     } else {
+        /* Cache the value pointer for potential locality sorting */
+        void *entry;
+        if (hashtableIncrementalFindGetResult(&info->hashtab_state, &entry)) {
+            info->value_ptr = entry;
+        }
         info->state = PREFETCH_VALUE;
     }
 }
@@ -137,8 +168,85 @@ static void prefetchValue(KeyPrefetchInfo *info) {
     void *entry;
     if (hashtableIncrementalFindGetResult(&info->hashtab_state, &entry)) {
         robj *val = entry;
-        if (val->encoding == OBJ_ENCODING_RAW && val->type == OBJ_STRING) {
+
+        /* Enhanced prefetching supporting all data types and encodings */
+        switch (val->type) {
+        case OBJ_STRING:
+            if (val->encoding == OBJ_ENCODING_RAW) {
+                valkey_prefetch(val->ptr);
+            }
+            /* EMBSTR and INT encodings are embedded, no separate prefetch needed */
+            break;
+
+        case OBJ_LIST:
+            if (val->encoding == OBJ_ENCODING_QUICKLIST) {
+                quicklist *ql = val->ptr;
+                valkey_prefetch(ql);  /* Prefetch quicklist header */
+
+                /* Prefetch first few nodes for sequential access patterns */
+                if (ql->head) {
+                    valkey_prefetch(ql->head);
+                    if (ql->head->next) valkey_prefetch(ql->head->next);
+                }
+                if (ql->tail && ql->tail != ql->head) {
+                    valkey_prefetch(ql->tail);
+                }
+            } else if (val->encoding == OBJ_ENCODING_LISTPACK) {
+                valkey_prefetch(val->ptr);
+            }
+            break;
+
+        case OBJ_SET:
+            if (val->encoding == OBJ_ENCODING_HASHTABLE) {
+                /* Prefetch hashtable structure */
+                valkey_prefetch(val->ptr);
+            } else if (val->encoding == OBJ_ENCODING_INTSET) {
+                valkey_prefetch(val->ptr);
+            } else if (val->encoding == OBJ_ENCODING_LISTPACK) {
+                valkey_prefetch(val->ptr);
+            }
+            break;
+
+        case OBJ_ZSET:
+            if (val->encoding == OBJ_ENCODING_SKIPLIST) {
+                zset *zs = val->ptr;
+                valkey_prefetch(zs);  /* Prefetch zset structure */
+
+                /* Prefetch skiplist header and first node */
+                if (zs->zsl) {
+                    valkey_prefetch(zs->zsl);
+                    if (zs->zsl->header && zs->zsl->header->level[0].forward) {
+                        valkey_prefetch(zs->zsl->header->level[0].forward);
+                    }
+                }
+
+                /* Prefetch dict for O(1) score lookup */
+                if (zs->ht) {
+                    valkey_prefetch(zs->ht);
+                }
+            } else if (val->encoding == OBJ_ENCODING_LISTPACK) {
+                valkey_prefetch(val->ptr);
+            }
+            break;
+
+        case OBJ_HASH:
+            if (val->encoding == OBJ_ENCODING_HASHTABLE) {
+                /* Prefetch hashtable structure */
+                valkey_prefetch(val->ptr);
+            } else if (val->encoding == OBJ_ENCODING_LISTPACK) {
+                valkey_prefetch(val->ptr);
+            }
+            break;
+
+        case OBJ_STREAM:
             valkey_prefetch(val->ptr);
+            /* Could prefetch rax tree nodes for range queries */
+            break;
+
+        case OBJ_MODULE:
+            /* Module types handle their own prefetching via callbacks */
+            if (val->ptr) valkey_prefetch(val->ptr);
+            break;
         }
     }
 
@@ -158,11 +266,29 @@ static void prefetchValue(KeyPrefetchInfo *info) {
 static void hashtablePrefetch(hashtable **tables) {
     initBatchInfo(tables);
     KeyPrefetchInfo *info;
+
+    /* Phase 1: Prefetch all hashtable entries */
     while ((info = getNextPrefetchInfo())) {
-        switch (info->state) {
-        case PREFETCH_ENTRY: prefetchEntry(info); break;
-        case PREFETCH_VALUE: prefetchValue(info); break;
-        default: serverPanic("Unknown prefetch state %d", info->state);
+        if (info->state == PREFETCH_ENTRY) {
+            prefetchEntry(info);
+        } else {
+            break;  /* All entries are done, move to value prefetch phase */
+        }
+    }
+
+    /* Phase 2: Sort by memory locality if enabled, then prefetch values */
+    if (server.prefetch_locality_aware && batch->key_count > 1) {
+        sortBatchByLocality(batch->prefetch_info, batch->key_count);
+        /* Reset index after sorting */
+        batch->cur_idx = 0;
+    }
+
+    /* Phase 3: Prefetch values in (potentially sorted) order */
+    while ((info = getNextPrefetchInfo())) {
+        if (info->state == PREFETCH_VALUE) {
+            prefetchValue(info);
+        } else if (info->state != PREFETCH_DONE) {
+            serverPanic("Unknown prefetch state %d", info->state);
         }
     }
 }

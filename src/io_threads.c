@@ -5,6 +5,7 @@
  */
 
 #include "io_threads.h"
+#include "access_pattern_learner.h"
 
 static _Thread_local int thread_id = 0; /* Thread local var */
 static pthread_t io_threads[IO_THREADS_MAX_NUM] = {0};
@@ -354,6 +355,7 @@ void initIOThreads(void) {
     serverAssert(server.io_threads_num <= IO_THREADS_MAX_NUM);
 
     prefetchCommandsBatchInit();
+    patternLearnerInit();
 
     /* Spawn and initialize the I/O threads. */
     for (int i = 1; i < server.io_threads_num; i++) {

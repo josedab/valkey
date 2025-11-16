@@ -3319,6 +3319,11 @@ standardConfig static_configs[] = {
     createIntConfig("min-string-size-avoid-copy-reply", NULL, MODIFIABLE_CONFIG | HIDDEN_CONFIG, 0, INT_MAX, server.min_string_size_copy_avoid, 16384, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("min-string-size-avoid-copy-reply-threaded", NULL, MODIFIABLE_CONFIG | HIDDEN_CONFIG, 0, INT_MAX, server.min_string_size_copy_avoid_threaded, 65536, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("prefetch-batch-max-size", NULL, MODIFIABLE_CONFIG, 0, 128, server.prefetch_batch_max_size, 16, INTEGER_CONFIG, NULL, onMaxBatchSizeChange),
+    createBoolConfig("prefetch-locality-aware", NULL, MODIFIABLE_CONFIG, server.prefetch_locality_aware, 1, NULL, NULL),
+    createBoolConfig("prefetch-pattern-learning-enabled", NULL, MODIFIABLE_CONFIG, server.prefetch_pattern_learning_enabled, 0, NULL, NULL),
+    createIntConfig("prefetch-pattern-max-patterns", NULL, MODIFIABLE_CONFIG, 100, 1000000, server.prefetch_pattern_max_patterns, 10000, INTEGER_CONFIG, NULL, NULL),
+    createIntConfig("prefetch-pattern-min-confidence", NULL, MODIFIABLE_CONFIG, 0, 100, server.prefetch_pattern_min_confidence, 70, INTEGER_CONFIG, NULL, NULL),
+    createLongLongConfig("prefetch-pattern-ttl-ms", NULL, MODIFIABLE_CONFIG, 60000, LLONG_MAX, server.prefetch_pattern_ttl_ms, 3600000, INTEGER_CONFIG, NULL, NULL), /* 1 hour default */
     createIntConfig("auto-aof-rewrite-percentage", NULL, MODIFIABLE_CONFIG, 0, INT_MAX, server.aof_rewrite_perc, 100, INTEGER_CONFIG, NULL, NULL),
     createIntConfig("cluster-replica-validity-factor", "cluster-slave-validity-factor", MODIFIABLE_CONFIG, 0, INT_MAX, server.cluster_replica_validity_factor, 10, INTEGER_CONFIG, NULL, NULL), /* replica max data age factor. */
     createIntConfig("list-max-listpack-size", "list-max-ziplist-size", MODIFIABLE_CONFIG, INT_MIN, INT_MAX, server.list_max_listpack_size, -2, INTEGER_CONFIG, NULL, NULL),
