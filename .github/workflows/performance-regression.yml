@@ -1,0 +1,108 @@
+name: Performance Regression Detection
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'utils/performance-benchmark.sh'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential tcl python3
+
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build PR version
+        run: |
+          make clean && make -j$(nproc)
+          cp src/valkey-server /tmp/valkey-server-pr
+          cp src/valkey-benchmark /tmp/valkey-benchmark-pr
+
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Build base version
+        run: |
+          make clean && make -j$(nproc)
+          cp src/valkey-server /tmp/valkey-server-base
+          cp src/valkey-benchmark /tmp/valkey-benchmark-base
+
+      - name: Run PR benchmarks
+        run: |
+          /tmp/valkey-server-pr --daemonize yes --port 6379 --save "" --appendonly no
+          sleep 2
+          export VALKEY_BENCHMARK=/tmp/valkey-benchmark-pr
+          ./utils/performance-benchmark.sh > /tmp/pr_results.json
+          /tmp/valkey-benchmark-pr -p 6379 SHUTDOWN NOSAVE || true
+          sleep 1
+
+      - name: Run base benchmarks
+        run: |
+          /tmp/valkey-server-base --daemonize yes --port 6379 --save "" --appendonly no
+          sleep 2
+          export VALKEY_BENCHMARK=/tmp/valkey-benchmark-base
+          ./utils/performance-benchmark.sh > /tmp/base_results.json
+          /tmp/valkey-benchmark-base -p 6379 SHUTDOWN NOSAVE || true
+          sleep 1
+
+      - name: Compare results
+        id: compare
+        run: |
+          python3 utils/compare-benchmarks.py \
+            /tmp/base_results.json \
+            /tmp/pr_results.json \
+            --threshold 5.0 | tee /tmp/comparison_report.txt
+        continue-on-error: true
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: benchmark-results
+          path: |
+            /tmp/base_results.json
+            /tmp/pr_results.json
+            /tmp/comparison_report.txt
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            let report = 'Performance benchmark comparison failed to generate.';
+
+            try {
+              report = fs.readFileSync('/tmp/comparison_report.txt', 'utf8');
+            } catch (error) {
+              console.log('Could not read comparison report:', error);
+            }
+
+            const body = `## 📊 Performance Benchmark Results\n\n\`\`\`\n${report}\n\`\`\`\n\n` +
+                        `[Download detailed results](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail if regressions detected
+        if: steps.compare.outcome == 'failure'
+        run: |
+          echo "Performance regressions detected!"
+          exit 1
